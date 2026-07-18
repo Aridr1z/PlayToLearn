@@ -289,7 +289,7 @@ class GameDialogCapturer:
     def _stop_capture(self):
         """Detiene la captura"""
         self.capturing = False
-        self.status_label.config(text="Detenido", fg="#fdfdfd")
+        self.status_label.config(text="Detenido", fg="#e74c3c")
         
         # Actualizar botones
         self.btn_capture.config(state=tk.NORMAL)
@@ -336,18 +336,30 @@ class GameDialogCapturer:
         self.dialogs_text.delete(1.0, tk.END)
         
         if not dialogs:
-            self.dialogs_text.insert(tk.END, "Sin dialogos capturados aun")
+            self.dialogs_text.insert(tk.END, "Sin dialogos capturados aun", "empty")
         else:
             for i, dialog in enumerate(dialogs, 1):
-                text = f"[{i}] {dialog['timestamp']} - {dialog['speaker']}\n"
-                self.dialogs_text.insert(tk.END, text, "header")
-                self.dialogs_text.insert(tk.END, f"    {dialog['text']}\n\n", "content")
+                # Línea separadora
+                self.dialogs_text.insert(tk.END, "─" * 80 + "\n", "separator")
+                
+                # Header con número, timestamp y speaker
+                header = f" {i}. [{dialog['timestamp']}] {dialog['speaker']}\n"
+                self.dialogs_text.insert(tk.END, header, "header")
+                
+                # Contenido del diálogo
+                content = f" {dialog['text']}\n\n"
+                self.dialogs_text.insert(tk.END, content, "content")
         
         self.dialogs_text.config(state=tk.DISABLED)
         
-        # Tags para colores
-        self.dialogs_text.tag_configure("header", foreground="#0066cc", font=("Arial", 9, "bold"))
-        self.dialogs_text.tag_configure("content", foreground="#333333", font=("Arial", 9))
+        # Tags para colores y estilos mejorados
+        self.dialogs_text.tag_configure("separator", foreground="#d0d0d0", font=("Consolas", 8))
+        self.dialogs_text.tag_configure("header", foreground="#2980b9", font=("Segoe UI", 10, "bold"))
+        self.dialogs_text.tag_configure("content", foreground="#2c3e50", font=("Segoe UI", 9), lmargin2=20, rmargin=10)
+        self.dialogs_text.tag_configure("empty", foreground="#95a5a6", font=("Segoe UI", 10))
+        
+        # Auto-scroll al final
+        self.dialogs_text.see(tk.END)
     
     def _export_dialogs(self):
         """Exporta diálogos a archivo de texto"""
