@@ -30,7 +30,7 @@ Game Dialog Capturer permite seleccionar una región de la pantalla (como un sni
 ### Paso 1: Clonar o descargar el proyecto
 
 ```bash
-git clone https://github.com/tuusuario/game-dialog-capturer.git
+git clone https://github.com/Aridr1z/PlayToLearn
 cd game-dialog-capturer
 ```
 
