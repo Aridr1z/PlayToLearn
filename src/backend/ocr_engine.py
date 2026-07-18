@@ -31,7 +31,7 @@ class OCREngine:
             image: Imagen PIL o ruta a archivo
             
         Returns:
-            str: Texto extraído
+            str: Texto extraído y limpio
         """
         if not self.initialized:
             logger.error("Tesseract no está disponible")
@@ -42,11 +42,49 @@ class OCREngine:
                 image = Image.open(image)
             
             text = pytesseract.image_to_string(image, lang=self.language)
+            
+            # Post-procesamiento para limpiar el texto
+            text = self._clean_text(text)
+            
             return text.strip()
         
         except Exception as e:
             logger.error(f"Error durante OCR: {e}")
             return ""
+    
+    def _clean_text(self, text):
+        """
+        Limpia y normaliza el texto extraído por OCR
+        
+        Args:
+            text: Texto crudo del OCR
+            
+        Returns:
+            str: Texto limpio
+        """
+        import re
+        
+        # Remover saltos de línea múltiples
+        text = re.sub(r'\n\s*\n', ' ', text)
+        
+        # Convertir saltos de línea simples a espacios
+        text = text.replace('\n', ' ')
+        
+        # Remover espacios múltiples
+        text = re.sub(r' +', ' ', text)
+        
+        # Remover caracteres especiales innecesarios
+        # Mantener: letras, números, puntuación básica, guiones, apóstrofes
+        text = re.sub(r'[^\w\s\.\,\!\?\;\:\'\"\-]', '', text)
+        
+        # Limpiar espacios alrededor de puntuación
+        text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+        text = re.sub(r'([.,!?;:])\s+', r'\1 ', text)
+        
+        # Remover espacios al inicio y final
+        text = text.strip()
+        
+        return text
     
     def extract_text_with_confidence(self, image):
         """
