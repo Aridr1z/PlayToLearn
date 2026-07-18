@@ -1,0 +1,51 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+venv3/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Project specific
+dialogs/dialogs.json
+dialogs/*.txt
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Package
+*.wheel
+*.egg
+.tox/
+
+# Misc
+.env
+.env.local
+*.cfg
+config.ini
