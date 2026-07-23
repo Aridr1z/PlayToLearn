@@ -19,8 +19,11 @@ logger = logging.getLogger(__name__)
 class CapturePipeline:
     """Coordina la captura y el procesamiento de dialogos"""
 
-    QUEUE_MAXSIZE = 10       # Frames en espera antes de descartar los viejos
-    CAPTURE_INTERVAL = 0.4   # Segundos entre capturas de pantalla
+    # Cola corta a proposito: si el procesamiento se atrasa preferimos
+    # descartar frames viejos antes que acumular retraso. Con 3 frames el
+    # atraso maximo queda acotado a poco mas de un segundo.
+    QUEUE_MAXSIZE = 3
+    CAPTURE_INTERVAL = 0.35  # Segundos entre capturas de pantalla
 
     def __init__(self, screenshot_capture, ocr_engine):
         """
@@ -105,6 +108,8 @@ class CapturePipeline:
             "processed": 0,
             "emitted": 0,
             "queue_size": 0,
+            "frames_skipped": 0,
+            "skip_ratio": 0.0,
         }
 
         if self._producer:

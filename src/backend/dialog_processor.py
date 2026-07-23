@@ -17,6 +17,8 @@ import threading
 import logging
 from queue import Empty
 
+from .frame_filter import FrameFilter
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +40,8 @@ class DialogProcessor(threading.Thread):
         self.ocr_engine = ocr_engine
         self.frame_queue = frame_queue
         self.on_dialog = on_dialog
+
+        self.frame_filter = FrameFilter()
 
         self._stop_event = threading.Event()
 
@@ -83,6 +87,12 @@ class DialogProcessor(threading.Thread):
 
     def _process_frame(self, frame):
         """Aplica OCR a un frame y actualiza el estado de decision"""
+        # Si la pantalla no cambio, el texto es el mismo: nos ahorramos
+        # medio segundo de OCR y lo contamos como una lectura estable.
+        if not self.frame_filter.has_changed(frame):
+            self._register_stable_read()
+            return
+
         text = self.ocr_engine.extract_text(frame)
 
         if not text:
@@ -101,7 +111,20 @@ class DialogProcessor(threading.Thread):
             self._stable_count = 1
             self._pending_saved = False
 
-        # Guardar una sola vez por dialogo, aunque siga en pantalla
+        self._commit_if_stable()
+
+    def _register_stable_read(self):
+        """
+        Cuenta una lectura estable sin gastar OCR.
+        Se usa cuando la pantalla es identica al frame anterior.
+        """
+        if not self._pending_text:
+            return
+        self._stable_count += 1
+        self._commit_if_stable()
+
+    def _commit_if_stable(self):
+        """Guarda el pendiente si ya se estabilizo y aun no se guardo"""
         if not self._pending_saved and self._stable_count >= self.STABLE_REQUIRED:
             self._commit(self._pending_text)
             self._pending_saved = True
@@ -154,7 +177,9 @@ class DialogProcessor(threading.Thread):
 
     def get_stats(self):
         """Retorna estadisticas del consumidor"""
-        return {
+        stats = {
             "processed": self.frames_processed,
             "emitted": self.dialogs_emitted,
         }
+        stats.update(self.frame_filter.get_stats())
+        return stats

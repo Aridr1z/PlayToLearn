@@ -6,6 +6,7 @@ from .screenshot import ScreenshotCapture
 from .capture_worker import CaptureWorker
 from .dialog_processor import DialogProcessor
 from .capture_pipeline import CapturePipeline
+from .frame_filter import FrameFilter
 
 __all__ = [
     'OCREngine',
@@ -14,4 +15,5 @@ __all__ = [
     'CaptureWorker',
     'DialogProcessor',
     'CapturePipeline',
+    'FrameFilter',
 ]
