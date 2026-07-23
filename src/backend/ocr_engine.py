@@ -20,6 +20,8 @@ except LookupError:
     nltk.download('words', quiet=True)
 
 class OCREngine:
+    CONTAINMENT_THRESHOLD = 0.85  # Cuanto del texto corto debe estar en el largo
+
     def __init__(self):
         self.language = 'eng+spa'
         self.initialized = self._check_tesseract()
@@ -296,6 +298,32 @@ class OCREngine:
             logger.error(f"Error durante OCR con confianza: {e}")
             return "", 0
     
+    def _trim_noise_prefix(self, seq):
+        """
+        Quita un token corto inicial que suele ser ruido del OCR
+        pegado al nombre: ['SOK', 'RHONA', 'DINSMORE'] -> ['RHONA', 'DINSMORE']
+
+        Solo lo descarta si quedan al menos dos tokens largos despues,
+        para no mutilar nombres cortos legitimos como ['MEL'].
+
+        Args:
+            seq: Lista de tokens en mayusculas
+
+        Returns:
+            list: Secuencia sin el prefijo de ruido
+        """
+        if len(seq) < 3:
+            return seq
+
+        first_len = len(re.sub(r'[^A-Za-z]', '', seq[0]))
+        rest_lens = [len(re.sub(r'[^A-Za-z]', '', t)) for t in seq[1:]]
+
+        if first_len <= 3 and all(length >= 4 for length in rest_lens):
+            logger.debug(f"Prefijo de ruido descartado del speaker: {seq[0]}")
+            return seq[1:]
+
+        return seq
+
     def split_speaker_and_text(self, text):
         """
         Separa el nombre del personaje (en MAYUSCULAS) del dialogo.
@@ -350,6 +378,7 @@ class OCREngine:
                     rest = ' '.join(tokens[j:])
                     rest_letters = re.sub(r'[^A-Za-z]', '', rest)
                     if rest_letters and not rest_letters.isupper():
+                        seq = self._trim_noise_prefix(seq)
                         speaker = ' '.join(seq).strip(' :.-')
                         self.known_speakers.add(speaker)
                         logger.debug(f"Speaker detectado: {speaker}")
@@ -367,26 +396,83 @@ class OCREngine:
         
         return None, text
     
-    def is_similar(self, text1, text2, threshold=0.80):
+    # Contracciones y coloquialismos que el diccionario NLTK no incluye
+    EXTRA_WORDS = {
+        'isnt', 'dont', 'hes', 'shes', 'its', 'im', 'youre', 'theyre',
+        'cant', 'wont', 'ive', 'id', 'ill', 'youve', 'weve', 'wasnt',
+        'werent', 'hasnt', 'havent', 'didnt', 'doesnt', 'couldnt',
+        'wouldnt', 'shouldnt', 'thats', 'whats', 'lets', 'aint',
+        'gonna', 'wanna', 'gotta', 'yall',
+    }
+
+    def _core_words(self, text):
         """
-        Compara dos textos con fuzzy matching (similitud de caracteres)
-        Atrapa errores OCR tipo 'vvork' vs 'work'
-        
+        Extrae solo las palabras reales del texto, descartando la basura
+        que suele meter el OCR ('MATT, PiQiigeey 7. ek Leet OR ern').
+
+        Comparar por este nucleo hace que dos lecturas del mismo dialogo
+        se reconozcan como iguales aunque el ruido de alrededor cambie.
+
+        Args:
+            text: Texto a procesar
+
+        Returns:
+            list: Palabras validas en minusculas
+        """
+        tokens = re.findall(r"[a-z']+", text.lower())
+        cleaned = [t.replace("'", "") for t in tokens]
+        return [
+            t for t in cleaned
+            if len(t) >= 3 and (t in self.valid_words or t in self.EXTRA_WORDS)
+        ]
+
+    def is_similar(self, text1, text2, threshold=0.72):
+        """
+        Determina si dos textos corresponden al mismo dialogo.
+
+        Compara el nucleo de palabras reales (ignorando ruido del OCR) de
+        dos formas complementarias:
+          1. Similitud global del nucleo.
+          2. Contencion: si uno es una lectura parcial del otro.
+
         Args:
             text1: Primer texto
             text2: Segundo texto
-            threshold: Similitud minima para considerarlos iguales (0.80 = 80%)
-            
+            threshold: Similitud minima del nucleo
+
         Returns:
-            bool: True si los textos son esencialmente el mismo
+            bool: True si son el mismo dialogo
         """
         if not text1 or not text2:
             return False
-        
-        ratio = SequenceMatcher(None, text1.lower(), text2.lower()).ratio()
-        return ratio >= threshold
-    
-    def is_duplicate_of_recent(self, text, recent_texts, threshold=0.80):
+
+        words1 = self._core_words(text1)
+        words2 = self._core_words(text2)
+
+        # Sin palabras reales: comparar el texto crudo como respaldo
+        if not words1 or not words2:
+            return SequenceMatcher(None, text1.lower(), text2.lower()).ratio() >= 0.80
+
+        # 1) Similitud global del nucleo
+        ratio = SequenceMatcher(None, ' '.join(words1), ' '.join(words2)).ratio()
+        if ratio >= threshold:
+            return True
+
+        # 2) Contencion: una lectura parcial del mismo dialogo
+        short, long_ = (words1, words2) if len(words1) <= len(words2) else (words2, words1)
+        if len(short) >= 3:
+            pool = list(long_)
+            hits = 0
+            for word in short:
+                if word in pool:
+                    pool.remove(word)
+                    hits += 1
+            if hits / len(short) >= self.CONTAINMENT_THRESHOLD:
+                return True
+
+        return False
+
+    def is_duplicate_of_recent(self, text, recent_texts, threshold=0.72):
         """
         Verifica si el texto es similar a alguno del historial reciente
         
