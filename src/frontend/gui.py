@@ -298,35 +298,79 @@ class GameDialogCapturer:
         self.capture_status.config(text="")
     
     def _capture_loop(self):
-        """Loop de captura automática"""
-        last_text = ""
-        capture_count = 0
+        """
+        Loop de captura automática con:
+        - Estabilización: espera 2 capturas iguales antes de guardar
+        - Rescate: si un diálogo pasa rápido (1 sola captura), lo guarda
+          antes de que llegue el siguiente en vez de perderlo
+        - Historial reciente: compara contra últimos 5 diálogos
+        """
+        self._capture_count = 0
+        pending_text = ""      # Texto candidato esperando estabilizarse
+        stable_count = 0       # Cuántas capturas seguidas lleva igual
+        recent_texts = []      # Últimos diálogos guardados
+        MAX_RECENT = 5
+        STABLE_REQUIRED = 2
+        
+        def commit_dialog(text_to_save):
+            """Guarda un diálogo si no es duplicado reciente"""
+            if self.ocr_engine.is_duplicate_of_recent(text_to_save, recent_texts):
+                return
+            
+            speaker, dialog_text = self.ocr_engine.split_speaker_and_text(text_to_save)
+            if not speaker:
+                speaker = "Unknown"
+            
+            self.dialog_manager.add_dialog(speaker, dialog_text)
+            self.dialog_manager.save_dialogs()
+            self._capture_count += 1
+            
+            recent_texts.append(text_to_save)
+            if len(recent_texts) > MAX_RECENT:
+                recent_texts.pop(0)
+            
+            self.capture_status.config(text=f"Capturados: {self._capture_count}")
+            self._refresh_dialogs()
         
         while self.capturing:
             try:
-                # Captura imagen
                 screenshot = self.screenshot_capture.capture_region(self.current_region)
                 
                 if screenshot:
-                    # Extrae texto
                     text = self.ocr_engine.extract_text(screenshot)
                     
-                    # Si es texto nuevo y no está vacío
-                    if text and text != last_text and len(text) > 3:
-                        speaker = f"Speaker {capture_count + 1}"
-                        self.dialog_manager.add_dialog(speaker, text)
-                        self.dialog_manager.save_dialogs()
-                        last_text = text
-                        capture_count += 1
+                    if text:
+                        # Es el mismo texto si: son similares (fuzzy) O el nuevo
+                        # contiene al anterior (texto animado creciendo)
+                        same_as_pending = (
+                            self.ocr_engine.is_similar(text, pending_text, threshold=0.80)
+                            or (pending_text and pending_text in text)
+                        )
                         
-                        self.capture_status.config(text=f"Capturados: {capture_count}")
-                        self._refresh_dialogs()
+                        if same_as_pending:
+                            stable_count += 1
+                            # Quedarse con la versión más larga (más completa)
+                            if len(text) > len(pending_text):
+                                pending_text = text
+                        else:
+                            # Texto realmente nuevo. Si había uno pendiente que
+                            # nunca se estabilizó (diálogo rápido), rescatarlo
+                            if pending_text and stable_count >= 1:
+                                commit_dialog(pending_text)
+                            
+                            pending_text = text
+                            stable_count = 1
+                        
+                        # Guardar si el texto se mantuvo estable
+                        if stable_count >= STABLE_REQUIRED:
+                            commit_dialog(pending_text)
+                            stable_count = 0
                 
-                time.sleep(2)
+                time.sleep(1)
             
             except Exception as e:
                 logger.error(f"Error en captura: {e}")
-                time.sleep(2)
+                time.sleep(1)
     
     def _refresh_dialogs(self):
         """Actualiza la lista de diálogos en pantalla"""
